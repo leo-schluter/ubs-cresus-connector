@@ -71,10 +71,88 @@ The converter applies double-entry bookkeeping principles:
 ## Features
 
 - Combines multiple description fields into a single label
+- **Customizable cleaning rules** via `cleaning_rules.json` configuration file
 - Skips transactions with no amounts
 - Validates dates before conversion
 - Provides detailed conversion summary
 - Error handling with row-level reporting
+
+## Customizing Label Cleaning
+
+The converter uses a `cleaning_rules.json` file to customize how transaction labels are cleaned. This allows you to:
+
+- Remove unwanted text (e.g., "Réf. QRR:", "Motif du paiement:")
+- Use regex patterns to clean technical details (IBAN, BIC/SWIFT codes)
+- Add custom replacements for specific text (e.g., rename "VILLE DE GENEVE" → "Ville de Genève")
+- Control output format (separator, max length, etc.)
+
+### Configuration File Structure
+
+The `cleaning_rules.json` file contains:
+
+1. **simple_replacements**: Basic text search and replace
+2. **regex_replacements**: Regular expression patterns for complex cleaning
+3. **custom_replacements**: Your specific custom rules
+4. **cleanup_options**: General cleanup settings (trim spaces, max length, etc.)
+5. **output_format**: Separator between label parts
+
+### Example Configuration
+
+```json
+{
+  "enabled": true,
+  "rules": {
+    "simple_replacements": [
+      {
+        "description": "Remove 'Réf. QRR:' prefix",
+        "search": "Réf. QRR: ",
+        "replace": "",
+        "full_replacement": false,
+        "enabled": true
+      }
+    ],
+    "custom_replacements": [
+      {
+        "description": "Truncate any label containing Swisscom to just 'Swisscom'",
+        "search": "SWISSCOM",
+        "replace": "Swisscom",
+        "full_replacement": true,
+        "enabled": true,
+        "comment": "Full replacement: entire label becomes 'Swisscom' if it contains 'SWISSCOM'"
+      }
+    ],
+    "cleanup_options": {
+      "trim_whitespace": true,
+      "remove_duplicate_spaces": true,
+      "max_length": 100
+    }
+  }
+}
+```
+
+### Full Replacement Mode
+
+The `full_replacement` parameter allows you to truncate labels intelligently:
+
+- **`full_replacement: false`** (default): Only replaces the matching text
+  - Example: `"VILLE DE GENEVE | Invoice 123"` → `"Ville de Genève | Invoice 123"`
+
+- **`full_replacement: true`**: If search text is found, replaces the **entire label**
+  - Example: `"SWISSCOM SA | Ref: 12345 | Telecom bill"` → `"Swisscom"`
+
+This is perfect for:
+- Truncating long recurring supplier names
+- Simplifying utility bills (SIG, Swisscom, etc.)
+- Standardizing salary payments, rent, etc.
+
+### How to Use
+
+1. Edit `cleaning_rules.json` to add your custom rules
+2. Set `"enabled": true` for rules you want to apply
+3. Set `"enabled": false` to temporarily disable a rule
+4. Run the converter normally - it will automatically use your rules
+
+The configuration file includes detailed instructions and examples in French.
 
 ## Output Example
 

@@ -46,3 +46,12 @@ Credit transactions (money IN): Bank account is debited, contra account is credi
 Debit transactions (money OUT): Contra account is debited, bank account is credited
 
 This follows double-entry bookkeeping where incoming money increases bank assets (debit) and outgoing money decreases bank assets (credit).
+
+### Label Cleaning Configuration
+The converter supports customizable cleaning rules via `cleaning_rules.json`. This JSON configuration file allows users to:
+- Define simple text replacements (ubs_cresus_converter.py:80-82)
+- Use regex patterns for complex cleaning (ubs_cresus_converter.py:85-87)
+- Add custom replacements for specific cases (ubs_cresus_converter.py:90-92)
+- Configure cleanup options (trim spaces, max length, etc.) (ubs_cresus_converter.py:95-114)
+
+The cleaning rules are loaded at runtime (ubs_cresus_converter.py:35-69) and applied during description processing (ubs_cresus_converter.py:192-193).

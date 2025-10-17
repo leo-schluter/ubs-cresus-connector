@@ -4,6 +4,9 @@
 # Output files
 *.txt
 
+# Exclude cleaning rules from being ignored
+!cleaning_rules.json
+
 # Python
 __pycache__/
 *.py[cod]

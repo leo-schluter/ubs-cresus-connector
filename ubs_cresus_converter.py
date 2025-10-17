@@ -6,6 +6,8 @@ Converts UBS CSV bank statements to Cresus Comptabilité TXT format
 
 import csv
 import sys
+import json
+import re
 from pathlib import Path
 from datetime import datetime
 from io import StringIO
@@ -30,9 +32,110 @@ def format_date(date_str):
         return date_str
 
 
-def clean_description(desc1, desc2, desc3):
-    """Combine and clean description fields, keeping only essential information"""
-    import re
+def load_cleaning_rules(rules_file='cleaning_rules.json'):
+    """Load cleaning rules from JSON configuration file"""
+    rules_path = Path(__file__).parent / rules_file
+
+    # Default rules if file doesn't exist
+    default_rules = {
+        'enabled': True,
+        'rules': {
+            'simple_replacements': [],
+            'regex_replacements': [],
+            'custom_replacements': [],
+            'cleanup_options': {
+                'trim_whitespace': True,
+                'remove_duplicate_spaces': True,
+                'remove_trailing_semicolons': True,
+                'remove_trailing_colons': True,
+                'remove_empty_parentheses': True,
+                'max_length': 0
+            }
+        },
+        'output_format': {
+            'separator': ' | '
+        }
+    }
+
+    if not rules_path.exists():
+        return default_rules
+
+    try:
+        with open(rules_path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"Warning: Could not load {rules_file}: {e}")
+        print("Using default cleaning rules")
+        return default_rules
+
+
+def apply_cleaning_rules(text, rules_config):
+    """Apply cleaning rules from configuration to text"""
+    if not rules_config.get('enabled', True):
+        return text
+
+    rules = rules_config.get('rules', {})
+
+    # Apply simple text replacements
+    for rule in rules.get('simple_replacements', []):
+        if rule.get('enabled', True):
+            if rule.get('full_replacement', False):
+                # If text contains search string, replace ENTIRE text with replace value
+                if rule['search'] in text:
+                    text = rule['replace']
+            else:
+                # Normal replacement: only replace matching substring
+                text = text.replace(rule['search'], rule['replace'])
+
+    # Apply regex replacements
+    for rule in rules.get('regex_replacements', []):
+        if rule.get('enabled', True):
+            if rule.get('full_replacement', False):
+                # If pattern matches, replace ENTIRE text with replace value
+                if re.search(rule['pattern'], text):
+                    text = rule['replace']
+            else:
+                # Normal replacement: only replace matching pattern
+                text = re.sub(rule['pattern'], rule['replace'], text)
+
+    # Apply custom replacements
+    for rule in rules.get('custom_replacements', []):
+        if rule.get('enabled', True):
+            if rule.get('full_replacement', False):
+                # If text contains search string, replace ENTIRE text with replace value
+                if rule['search'] in text:
+                    text = rule['replace']
+            else:
+                # Normal replacement: only replace matching substring
+                text = text.replace(rule['search'], rule['replace'])
+
+    # Apply cleanup options
+    cleanup = rules.get('cleanup_options', {})
+
+    if cleanup.get('remove_duplicate_spaces', True):
+        text = re.sub(r'\s+', ' ', text)
+
+    if cleanup.get('remove_trailing_semicolons', True):
+        text = text.rstrip(';')
+
+    if cleanup.get('remove_trailing_colons', True):
+        text = text.rstrip(':')
+
+    if cleanup.get('remove_empty_parentheses', True):
+        text = re.sub(r'\(\s*\)', '', text)
+
+    if cleanup.get('trim_whitespace', True):
+        text = text.strip()
+
+    max_length = cleanup.get('max_length', 0)
+    if max_length > 0 and len(text) > max_length:
+        text = text[:max_length].rstrip()
+
+    return text
+
+
+def clean_description(desc1, desc2, desc3, rules_config=None):
+    """Combine and clean description fields using configuration rules"""
 
     # Combine all description fields
     full_desc = ' '.join([d.strip() for d in [desc1, desc2, desc3] if d and d.strip()])
@@ -95,9 +198,19 @@ def clean_description(desc1, desc2, desc3):
                 if cleaned:
                     simple_parts.append(cleaned)
 
-        return ' | '.join(simple_parts[:2]) if simple_parts else 'Transaction bancaire'
+        result = ' | '.join(simple_parts[:2]) if simple_parts else 'Transaction bancaire'
+    else:
+        # Get separator from config
+        separator = ' | '
+        if rules_config:
+            separator = rules_config.get('output_format', {}).get('separator', ' | ')
+        result = separator.join(parts)
 
-    return ' | '.join(parts)
+    # Apply custom cleaning rules from config
+    if rules_config:
+        result = apply_cleaning_rules(result, rules_config)
+
+    return result if result else 'Transaction bancaire'
 
 
 def convert_ubs_to_cresus(input_file, output_file):
@@ -108,14 +221,19 @@ def convert_ubs_to_cresus(input_file, output_file):
         input_file: Path to UBS CSV export file
         output_file: Path for Cresus TXT output file
     """
-    
+
+    # Load cleaning rules
+    rules_config = load_cleaning_rules()
+    if rules_config.get('enabled'):
+        print("Using custom cleaning rules from cleaning_rules.json")
+
     # Account configuration
     BANK_ACCOUNT = '1020'      # Bank account
     CONTRA_ACCOUNT = '2000'    # Temporary/contra account
-    
+
     transactions = []
     skipped = []
-    
+
     print(f"Reading UBS file: {input_file}")
 
     # Read UBS CSV
@@ -172,8 +290,8 @@ def convert_ubs_to_cresus(input_file, output_file):
                     skipped.append(f"Row {row_num}: Invalid date")
                     continue
                 
-                # Combine descriptions
-                description = clean_description(desc1, desc2, desc3)
+                # Combine descriptions with cleaning rules
+                description = clean_description(desc1, desc2, desc3, rules_config)
                 
                 # Determine debit/credit accounts and amount based on transaction type
                 if credit > 0:
